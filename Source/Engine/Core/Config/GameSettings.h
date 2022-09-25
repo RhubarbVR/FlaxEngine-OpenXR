@@ -49,6 +49,11 @@ public:
     bool NoSplashScreen = false;
 
     /// <summary>
+    /// True to start OpenXR at game startup.
+    /// </summary>
+    bool OpenXRStartAtStartUp = false;
+
+    /// <summary>
     /// Reference to the splash screen image to show on a game startup.
     /// </summary>
     Guid SplashScreen = Guid::Empty;

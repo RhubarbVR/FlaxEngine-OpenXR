@@ -38,6 +38,7 @@ public class Engine : EngineModule
         options.PublicDependencies.Add("Visject");
         options.PublicDependencies.Add("Localization");
         options.PublicDependencies.Add("Online");
+        options.PublicDependencies.Add("FlaxXR");
 
         // Use source folder per platform group
         switch (options.Platform.Target)

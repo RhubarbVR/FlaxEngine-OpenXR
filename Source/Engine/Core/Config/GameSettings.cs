@@ -34,6 +34,12 @@ namespace FlaxEditor.Content.Settings
         public bool NoSplashScreen;
 
         /// <summary>
+        /// True to start OpenXR at game startup.
+        /// </summary>
+        [EditorOrder(915), EditorDisplay("Startup", "Start OpenXR at StartUp"), Tooltip("True to start OpenXR at game startup.")]
+        public bool OpenXRStartAtStartUp;
+
+        /// <summary>
         /// Reference to the splash screen image to show on a game startup.
         /// </summary>
         [EditorOrder(920), EditorDisplay("Startup"), Tooltip("Reference to the splash screen image to show on a game startup.")]

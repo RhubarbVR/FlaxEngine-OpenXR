@@ -31,6 +31,11 @@ public:
 
     QueueVulkan(GPUDeviceVulkan* device, uint32 familyIndex);
 
+    inline uint32 GetQueueIndex() const
+    {
+        return _queueIndex;
+    }
+
     inline uint32 GetFamilyIndex() const
     {
         return _familyIndex;

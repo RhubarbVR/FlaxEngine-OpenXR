@@ -196,6 +196,7 @@ void GameSettings::Deserialize(DeserializeStream& stream, ISerializeModifier* mo
     Icon = JsonTools::GetGuid(stream, "Icon");
     FirstScene = JsonTools::GetGuid(stream, "FirstScene");
     NoSplashScreen = JsonTools::GetBool(stream, "NoSplashScreen", NoSplashScreen);
+    OpenXRStartAtStartUp = JsonTools::GetBool(stream, "OpenXRStartAtStartUp", OpenXRStartAtStartUp);
     SplashScreen = JsonTools::GetGuid(stream, "SplashScreen");
     CustomSettings.Clear();
     const auto customSettings = stream.FindMember("CustomSettings");
