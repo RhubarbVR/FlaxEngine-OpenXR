@@ -13,8 +13,6 @@ public class FlaxXR : EngineModule
     {
         base.Setup(options);
 
-        options.PrivateDependencies.Add("Graphics");
-        options.PrivateDependencies.Add("Renderer");
         switch (options.Platform.Target)
         {
             case TargetPlatform.Windows:
@@ -65,6 +63,20 @@ public class FlaxXR : EngineModule
                 break;
             default: throw new InvalidPlatformException(options.Platform.Target);
         }
+
+        if (options.PrivateDependencies.Contains("GraphicsDeviceVulkan"))
+        {
+            string includesFolderPath;
+            if (VulkanSdk.Instance.TryGetIncludePath(out includesFolderPath))
+            {
+                options.PublicIncludePaths.Add(includesFolderPath);
+            }
+            else
+            {
+                Log.Error("Missing VulkanSDK.");
+            }
+        }
+
 
         bool platformSupportsOpenXR;
         switch (options.Platform.Target)

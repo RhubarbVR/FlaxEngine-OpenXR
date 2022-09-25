@@ -62,8 +62,17 @@ public sealed class VulkanSdk : Sdk
                 // Found
                 RootPath = vulkanSdk;
                 IsValid = true;
-                Version = new Version(1, 0); // TODO: detecting Vulkan SDK version
-                Log.Verbose("Found VulkanSDK at: " + vulkanSdk);
+                try
+                {
+                    var versionString = vulkanSdk.Split('\\', '/').Last();
+                    Version = Version.Parse(versionString);
+                }
+                catch
+                {
+                    Log.Verbose("VulkanSDK version not found");
+                    Version = new Version(1, 0);
+                }
+                Log.Verbose("Found VulkanSDK at: " + vulkanSdk + " Version: " + Version.ToString());
             }
             else
             {
