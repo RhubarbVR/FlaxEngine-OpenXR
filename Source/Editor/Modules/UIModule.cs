@@ -569,10 +569,12 @@ namespace FlaxEditor.Modules
             _toolStripPlay = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Play64, Editor.Simulation.RequestPlayOrStopPlay).LinkTooltip("Start/Stop game (F5)");
             _toolStripPause = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Pause64, Editor.Simulation.RequestResumeOrPause).LinkTooltip("Pause/Resume game(F6)");
             _toolStripStep = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Skip64, Editor.Simulation.RequestPlayOneFrame).LinkTooltip("Step one frame in game");
-            _toolStripVR = (ToolStripButton)ToolStrip.AddButton("Start VR", VRStartStop).LinkTooltip("Start/Stop VR");
-            //FlaxXR.OpenXRStateChange += FlaxXR_OpenXRStateChange;
-            FlaxXR_OpenXRStateChange(FlaxXR.OpenXRRunning());
-
+            if (FlaxXR.IsOpenXRSupported())
+            {
+                _toolStripVR = (ToolStripButton)ToolStrip.AddButton("Start VR", VRStartStop).LinkTooltip("Start/Stop VR");
+                FlaxXR.RunningStateChange += FlaxXR_OpenXRStateChange;
+                FlaxXR_OpenXRStateChange(FlaxXR.OpenXRRunning());
+            }
             UpdateToolstrip();
         }
 

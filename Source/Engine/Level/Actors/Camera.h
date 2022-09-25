@@ -39,6 +39,7 @@ private:
 
     // Camera Settings
     bool _usePerspective;
+    bool _useStereoRendering;
     float _fov;
     float _customAspectRatio;
     float _near;
@@ -75,6 +76,20 @@ public:
     /// Sets the value indicating if camera should use perspective rendering mode, otherwise it will use orthographic projection.
     /// </summary>
     API_PROPERTY() void SetUsePerspective(bool value);
+
+    /// <summary>
+    /// Gets the value indicating if camera should use StereoRendering rendering.
+    /// </summary>
+    API_PROPERTY(Attributes = "EditorOrder(21), DefaultValue(true), EditorDisplay(\"Camera\"), Tooltip(\"Enables StereoRendering for VR XR use.\")")
+    FORCE_INLINE bool GetUseStereoRendering() const
+    {
+        return _useStereoRendering;
+    }
+
+    /// <summary>
+    /// Sets the value indicating if camera should use StereoRendering rendering mode.
+    /// </summary>
+    API_PROPERTY() void SetUseStereoRendering(bool value);
 
     /// <summary>
     /// Gets the camera's field of view (in degrees).

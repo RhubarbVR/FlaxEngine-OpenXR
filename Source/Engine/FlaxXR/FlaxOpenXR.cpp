@@ -78,8 +78,10 @@ bool FlaxXR::StartOpenXR() {
         bool result = mainOpenXRInstance->Init();
         if (!result) {
             msg = mainOpenXRInstance->msg;
+            mainOpenXRInstance->Stop();
             mainOpenXRInstance = nullptr;
         }
+        RunningStateChange(result);
         return result;
     }
     msg = TEXT("OpenXR already loaded");
@@ -88,11 +90,18 @@ bool FlaxXR::StartOpenXR() {
     return false;
 #endif // OPENXR_SUPPORT
 }
+Delegate<bool> FlaxXR::RunningStateChange;
 
 bool FlaxXR::StopOpenXR() {
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
     if (mainOpenXRInstance != nullptr) {
-        
+        bool result = mainOpenXRInstance->Stop();
+        if (!result) {
+            msg = mainOpenXRInstance->msg;
+        }
+        mainOpenXRInstance = nullptr;
+        RunningStateChange(false);
+        return result;
     }
     msg = TEXT("OpenXR already not running");
     return false;
@@ -106,7 +115,7 @@ bool FlaxXR::OpenXRRunning() {
     if (mainOpenXRInstance == nullptr) {
         return false;
     }
-    return ((OpenXRInstance*)mainOpenXRInstance)->session == XR_NULL_HANDLE;
+    return ((OpenXRInstance*)mainOpenXRInstance)->session != XR_NULL_HANDLE;
 #else // OPENXR_SUPPORT
     return false;
 #endif // OPENXR_SUPPORT

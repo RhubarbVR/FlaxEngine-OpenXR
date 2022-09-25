@@ -89,7 +89,8 @@ public:
 public:
 	String msg;
     
-	
+    bool Stop();
+
 	bool Init();
 };
 

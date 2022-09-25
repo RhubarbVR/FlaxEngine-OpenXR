@@ -15,6 +15,8 @@ public:
     static OpenXRInstance* mainOpenXRInstance;
     static String msg;
 
+    API_EVENT() static Delegate<bool> RunningStateChange;
+
     /// <summary>
     /// used for debuging and telling what error when Starting/Stoping OpenXR
     /// </summary>
