@@ -73,7 +73,7 @@ namespace FlaxEditor.Modules
         private ToolStripButton _toolStripPlay;
         private ToolStripButton _toolStripPause;
         private ToolStripButton _toolStripStep;
-        private ToolStripButton _toolStripVR;
+        private ToolStripButton _toolStripVRXR;
 
         /// <summary>
         /// The main menu control.
@@ -571,7 +571,7 @@ namespace FlaxEditor.Modules
             _toolStripStep = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Skip64, Editor.Simulation.RequestPlayOneFrame).LinkTooltip("Step one frame in game");
             if (FlaxXR.IsOpenXRSupported())
             {
-                _toolStripVR = (ToolStripButton)ToolStrip.AddButton("Start VR", VRStartStop).LinkTooltip("Start/Stop VR");
+                _toolStripVRXR = (ToolStripButton)ToolStrip.AddButton("Start VR/XR", VRStartStop).LinkTooltip("Start/Stop VR/XR");
                 FlaxXR.RunningStateChange += FlaxXR_OpenXRStateChange;
                 FlaxXR_OpenXRStateChange(FlaxXR.OpenXRRunning());
             }
@@ -584,23 +584,23 @@ namespace FlaxEditor.Modules
             {
                 if (!FlaxXR.StopOpenXR())
                 {
-                    MessageBox.Show($"Failed to stop VR\nError: {FlaxXR.ErrorMessage()}");
-                    Debug.LogError($"Failed to stop VR in editor\nError: {FlaxXR.ErrorMessage()}");
+                    MessageBox.Show($"Failed to stop VR/XR\nError: {FlaxXR.ErrorMessage()}");
+                    Debug.LogError($"Failed to stop VR/XR in editor\nError: {FlaxXR.ErrorMessage()}");
                 }
             }
             else
             {
                 if (!FlaxXR.StartOpenXR())
                 {
-                    MessageBox.Show($"Failed to start VR\nError: {FlaxXR.ErrorMessage()}");
-                    Debug.LogError($"Failed to start VR in editor\nError: {FlaxXR.ErrorMessage()}");
+                    MessageBox.Show($"Failed to start VR/XR\nError: {FlaxXR.ErrorMessage()}");
+                    Debug.LogError($"Failed to start VR/XR in editor\nError: {FlaxXR.ErrorMessage()}");
                 }
             }
         }
 
         private void FlaxXR_OpenXRStateChange(bool obj)
         {
-            _toolStripVR.Text = obj ? "Stop VR" : "Start VR";
+            _toolStripVRXR.Text = obj ? "Stop VR/XR" : "Start VR/XR";
         }
 
         private void InitStatusBar(RootControl mainWindow)

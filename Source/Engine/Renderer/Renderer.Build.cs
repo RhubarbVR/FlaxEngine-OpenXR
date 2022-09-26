@@ -15,5 +15,6 @@ public class Renderer : EngineModule
 
         options.PrivateDependencies.Add("Graphics");
         options.PrivateDependencies.Add("Content");
+        options.PrivateDependencies.Add("FlaxXR");
     }
 }

@@ -9,6 +9,7 @@
 #include "Engine/Core/Math/Ray.h"
 #include "Engine/Core/Types/LayersMask.h"
 #include "Engine/Scripting/ScriptingObjectReference.h"
+
 #if USE_EDITOR
 #include "Engine/Content/AssetReference.h"
 #include "Engine/Graphics/Models/ModelInstanceEntry.h"
@@ -39,7 +40,8 @@ private:
 
     // Camera Settings
     bool _usePerspective;
-    bool _useStereoRendering;
+    bool _useXRRendering;
+    bool _renderMainView;
     float _fov;
     float _customAspectRatio;
     float _near;
@@ -78,18 +80,32 @@ public:
     API_PROPERTY() void SetUsePerspective(bool value);
 
     /// <summary>
-    /// Gets the value indicating if camera should use StereoRendering rendering.
+    /// Gets the value indicating if camera should use XR rendering.
     /// </summary>
-    API_PROPERTY(Attributes = "EditorOrder(21), DefaultValue(true), EditorDisplay(\"Camera\"), Tooltip(\"Enables StereoRendering for VR XR use.\")")
-    FORCE_INLINE bool GetUseStereoRendering() const
+    API_PROPERTY(Attributes = "EditorOrder(20), DefaultValue(true), EditorDisplay(\"Camera\"), Tooltip(\"Enables rendering for VR XR use.\")")
+    FORCE_INLINE bool GetUseXRRendering() const
     {
-        return _useStereoRendering;
+        return _useXRRendering;
     }
 
     /// <summary>
-    /// Sets the value indicating if camera should use StereoRendering rendering mode.
+    /// Sets the value indicating if camera should use XR rendering.
     /// </summary>
-    API_PROPERTY() void SetUseStereoRendering(bool value);
+    API_PROPERTY() void SetUseXRRendering(bool value);
+
+    /// <summary>
+    /// Gets the value indicating if camera should render main view even when rendering in XR.
+    /// </summary>
+    API_PROPERTY(Attributes = "EditorOrder(20), DefaultValue(true), EditorDisplay(\"Camera\"), Tooltip(\"Enables Main render view for VR XR use.\")")
+    FORCE_INLINE bool GetRenderMainView() const
+    {
+        return _renderMainView;
+    }
+
+    /// <summary>
+    /// Sets the value indicating if camera should render main view even when rendering in XR.
+    /// </summary>
+    API_PROPERTY() void SetRenderMainView(bool value);
 
     /// <summary>
     /// Gets the camera's field of view (in degrees).

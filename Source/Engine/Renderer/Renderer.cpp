@@ -32,6 +32,8 @@
 #include "Engine/Level/Actor.h"
 #include "Engine/Level/Level.h"
 #include "Engine/Core/Config/GraphicsSettings.h"
+#include "Engine/FlaxXR/FlaxXR.h"
+
 #if USE_EDITOR
 #include "Editor/Editor.h"
 #include "Editor/QuadOverdrawPass.h"
@@ -296,7 +298,15 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     auto context = GPUDevice::Instance->GetMainContext();
     auto* graphicsSettings = GraphicsSettings::Get();
     auto& view = renderContext.View;
-    ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0);
+    bool isXRRender = false;
+    if (task->IsXRRender) {
+        ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0 && FlaxXR::OpenXRRunning());
+        isXRRender = FlaxXR::GetOpenXRInstance()->BeginUpdate();
+    }
+    else {
+        ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0);
+    }
+
 
     // Perform postFx volumes blending and query before rendering
     task->CollectPostFxVolumes(renderContext);
@@ -310,7 +320,9 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     renderContext.View.Prepare(renderContext);
     if (renderContext.View.Origin != renderContext.View.PrevOrigin)
         renderContext.Task->CameraCut(); // Cut any temporal effects on rendering origin change
+
     renderContext.Buffers->Prepare();
+
     for (auto& postFx : task->CustomPostFx)
     {
         if (postFx.Target)
@@ -564,6 +576,11 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
         else
         {
             MultiScaler::Instance()->Upscale(context, task->GetOutputViewport(), frameBuffer, task->GetOutputView());
+        }
+    }
+    if (isXRRender) {
+        if (!FlaxXR::GetOpenXRInstance()->EndUpdate()) {
+            FlaxXR::StopOpenXR();
         }
     }
 }

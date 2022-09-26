@@ -20,6 +20,8 @@
 #include "Engine/Scripting/Script.h"
 #include "Engine/Scripting/BinaryModule.h"
 #include "Engine/Threading/Threading.h"
+#include "Engine/FlaxXR/FlaxXR.h"
+
 #if USE_MONO
 #include <ThirdParty/mono-2.0/mono/metadata/appdomain.h>
 #endif
@@ -403,6 +405,13 @@ void SceneRenderTask::OnBegin(GPUContext* context)
 
 void SceneRenderTask::OnRender(GPUContext* context)
 {
+    if (Camera != nullptr) {
+        IsXRRender = Camera->GetUseXRRendering() && FlaxXR::OpenXRRunning();
+    }
+    else {
+        IsXRRender = false;
+    }
+
     if (!IsCustomRendering && Buffers && Buffers->GetWidth() > 0)
         Renderer::Render(this);
 

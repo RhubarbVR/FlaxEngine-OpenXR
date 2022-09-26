@@ -18,6 +18,7 @@ public class Level : EngineModule
         options.PrivateDependencies.Add("Graphics");
         options.PrivateDependencies.Add("Renderer");
         options.PrivateDependencies.Add("Particles");
+        options.PrivateDependencies.Add("FlaxXR");
 
         options.PublicDependencies.Add("Scripting");
         options.PublicDependencies.Add("Serialization");

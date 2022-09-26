@@ -1,7 +1,8 @@
-#include "FlaxOpenXR.h"
+#include "FlaxXR.h"
 #include "Engine/Core/Config/GameSettings.h"
 #include "FlaxEngine.Gen.h"
 #include "Engine/Engine/EngineService.h"
+#include "Engine/Graphics/RenderBuffers.h"
 
 class FlaxXRService : public EngineService
 {
@@ -10,7 +11,7 @@ public:
     FlaxXRService()
         : EngineService(TEXT("FlaxXR"), 50)
     {
-}
+    }
 
     bool Init() override;
     void Update() override;
@@ -20,13 +21,13 @@ FlaxXRService FlaxXRServiceInstance;
 
 
 bool FlaxXRService::Init() {
-    if(!GameSettings::Get()->OpenXRStartAtStartUp) {
+    if (!GameSettings::Get()->OpenXRStartAtStartUp) {
         return false;
     }
     bool OpenXRSupported = FlaxXR::IsOpenXRSupported();
     if (OpenXRSupported)
     {
-        LOG(Info,"OpenXR Supported");
+        LOG(Info, "OpenXR Supported");
 #if !FLAX_EDITOR
         FlaxXR::StartOpenXR();
 #endif
@@ -50,12 +51,13 @@ void FlaxXRService::Dispose() {
 OpenXRInstance* FlaxXR::mainOpenXRInstance;
 String FlaxXR::msg;
 
+
 bool FlaxXR::IsOpenXRSupported()
 {
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
-	return true;
+    return true;
 #else // OPENXR_SUPPORT
-	return false;
+    return false;
 #endif // OPENXR_SUPPORT
 }
 
@@ -71,6 +73,7 @@ String FlaxXR::ErrorMessage() {
 #endif // OPENXR_SUPPORT
 }
 
+
 bool FlaxXR::StartOpenXR() {
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
     if (mainOpenXRInstance == nullptr) {
@@ -80,10 +83,10 @@ bool FlaxXR::StartOpenXR() {
             msg = mainOpenXRInstance->msg;
             mainOpenXRInstance->Stop();
             mainOpenXRInstance = nullptr;
-        }
+    }
         RunningStateChange(result);
         return result;
-    }
+}
     msg = TEXT("OpenXR already loaded");
     return false;
 #else // OPENXR_SUPPORT
@@ -102,7 +105,7 @@ bool FlaxXR::StopOpenXR() {
         mainOpenXRInstance = nullptr;
         RunningStateChange(false);
         return result;
-    }
+}
     msg = TEXT("OpenXR already not running");
     return false;
 #else // OPENXR_SUPPORT

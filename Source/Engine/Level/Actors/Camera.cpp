@@ -34,7 +34,8 @@ Camera* Camera::GetMainCamera()
 Camera::Camera(const SpawnParams& params)
     : Actor(params)
     , _usePerspective(true)
-    , _useStereoRendering(false)
+    , _useXRRendering(true)
+    , _renderMainView(true)
     , _fov(60.0f)
     , _customAspectRatio(0.0f)
     , _near(10.0f)
@@ -46,11 +47,19 @@ Camera::Camera(const SpawnParams& params)
 #endif
 }
 
-void Camera::SetUseStereoRendering(bool value)
+void Camera::SetUseXRRendering(bool value)
 {
-    if (_useStereoRendering != value)
+    if (_useXRRendering != value)
     {
-        _useStereoRendering = value;
+        _useXRRendering = value;
+    }
+}
+
+void Camera::SetRenderMainView(bool value)
+{
+    if (_renderMainView != value)
+    {
+        _renderMainView = value;
     }
 }
 
@@ -353,7 +362,8 @@ void Camera::Serialize(SerializeStream& stream, const void* otherObj)
     SERIALIZE_GET_OTHER_OBJ(Camera);
 
     SERIALIZE_MEMBER(UsePerspective, _usePerspective);
-    SERIALIZE_MEMBER(StereoRendering, _useStereoRendering);
+    SERIALIZE_MEMBER(XRRendering, _useXRRendering);
+    SERIALIZE_MEMBER(RenderMainView, _renderMainView);
     SERIALIZE_MEMBER(FOV, _fov);
     SERIALIZE_MEMBER(CustomAspectRatio, _customAspectRatio);
     SERIALIZE_MEMBER(Near, _near);
@@ -368,7 +378,8 @@ void Camera::Deserialize(DeserializeStream& stream, ISerializeModifier* modifier
     Actor::Deserialize(stream, modifier);
 
     DESERIALIZE_MEMBER(UsePerspective, _usePerspective);
-    DESERIALIZE_MEMBER(StereoRendering, _useStereoRendering);
+    DESERIALIZE_MEMBER(XRRendering, _useXRRendering);
+    DESERIALIZE_MEMBER(RenderMainView, _renderMainView);
     DESERIALIZE_MEMBER(FOV, _fov);
     DESERIALIZE_MEMBER(CustomAspectRatio, _customAspectRatio);
     DESERIALIZE_MEMBER(Near, _near);

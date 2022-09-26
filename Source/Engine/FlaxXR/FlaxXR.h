@@ -11,10 +11,20 @@
 API_CLASS(Static) class FLAXENGINE_API FlaxXR
 {
     DECLARE_SCRIPTING_TYPE_MINIMAL(FlaxXR);
-public:
+private:
+
     static OpenXRInstance* mainOpenXRInstance;
     static String msg;
 
+public:
+
+    static OpenXRInstance* GetOpenXRInstance() {
+        return mainOpenXRInstance;
+    }
+
+    /// <summary>
+    /// Fires when openxr is loaded or unloaded
+    /// </summary>
     API_EVENT() static Delegate<bool> RunningStateChange;
 
     /// <summary>

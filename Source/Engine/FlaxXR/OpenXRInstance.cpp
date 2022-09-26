@@ -4,6 +4,7 @@
 #include "Engine\Core\Config\GameSettings.h";
 #include "Engine\Engine\Engine.h"
 #include "Engine\Core\Log.h"
+#include "FlaxXR.h"
 
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
 void OpenXRInstance::UpdateResultMSG(XrResult result) {
@@ -279,6 +280,227 @@ void OpenXRInstance::UpdateResultMSG(XrResult result) {
     }
 }
 #endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+#if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+// returns the preferred swapchain format if it is supported
+// else:
+// - if fallback is true, return the first supported format
+// - if fallback is false, return -1
+int64_t OpenXRInstance::Get_Swapchain_Format(XrInstance instance,
+    XrSession session,
+    int64_t preferred_format,
+    bool fallback)
+{
+    XrResult result;
+
+    uint32_t swapchain_format_count;
+    result = xrEnumerateSwapchainFormats(session, 0, &swapchain_format_count, NULL);
+    if (!XR_SUCCEEDED(result)) {
+        UpdateResultMSG(result);
+        msg += " Failed to create XR instance";
+        return false;
+    }
+
+    printf("Runtime supports %d swapchain formats\n", swapchain_format_count);
+    int64_t* swapchain_formats = (int64_t*)malloc(sizeof(int64_t) * swapchain_format_count);
+    result = xrEnumerateSwapchainFormats(session, swapchain_format_count, &swapchain_format_count,
+        swapchain_formats);
+    if (!XR_SUCCEEDED(result)) {
+        UpdateResultMSG(result);
+        msg += " Failed to create XR instance";
+        return false;
+    }
+
+    int64_t chosen_format = fallback ? swapchain_formats[0] : -1;
+
+    for (uint32_t i = 0; i < swapchain_format_count; i++) {
+        if (swapchain_formats[i] == preferred_format) {
+            chosen_format = swapchain_formats[i];
+            break;
+        }
+    }
+
+
+    free(swapchain_formats);
+
+    return chosen_format;
+}
+#endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+
+bool OpenXRInstance::BeginUpdate() {
+#if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+    XrEventDataBuffer runtime_event = { XR_TYPE_EVENT_DATA_BUFFER };
+    auto result = xrPollEvent(instance, &runtime_event);
+    if (!XR_SUCCEEDED(result))
+    {
+        msg = "PollEvent was not successful";
+        return false;
+    }
+
+    switch (runtime_event.type) {
+    case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
+        XrEventDataSessionStateChanged* event = (XrEventDataSessionStateChanged*)&runtime_event;
+        switch (event->state) {
+        case XR_SESSION_STATE_STOPPING: {
+            FlaxXR::StopOpenXR();
+            return false;
+            break;
+        }
+        case XR_SESSION_STATE_LOSS_PENDING:
+        case XR_SESSION_STATE_EXITING:
+            FlaxXR::StopOpenXR();
+            return false;
+            break;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+
+    frame_state = { XR_TYPE_FRAME_STATE };
+    XrFrameWaitInfo frame_wait_info = { XR_TYPE_FRAME_WAIT_INFO };
+    result = xrWaitFrame(session, &frame_wait_info, &frame_state);
+    if (!XR_SUCCEEDED(result))
+    {
+        msg = "xrWaitFrame() was not successful";
+        return false;
+    }
+
+    XrViewLocateInfo view_locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
+    view_locate_info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    view_locate_info.displayTime = frame_state.predictedDisplayTime;
+    view_locate_info.space = play_space;
+
+    view_state = { XR_TYPE_VIEW_STATE };
+    result = xrLocateViews(session, &view_locate_info, &view_state, view_count, &view_count, views);
+    if (!XR_SUCCEEDED(result))
+    {
+        msg = "Could not locate views";
+        return false;
+    }
+
+
+    // --- Begin frame
+    XrFrameBeginInfo frame_begin_info = { XR_TYPE_FRAME_BEGIN_INFO };
+    result = xrBeginFrame(session, &frame_begin_info);
+    if (!XR_SUCCEEDED(result))
+    {
+        msg = "failed to begin frame!";
+        return false;
+    }
+    for (uint32_t i = 0; i < view_count; i++) {
+
+        if (!frame_state.shouldRender) {
+            continue;
+        }
+
+        XrSwapchainImageAcquireInfo acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+
+        uint32_t acquired_index;
+        result = xrAcquireSwapchainImage(swapchains[i], &acquire_info, &acquired_index);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "failed to acquire swapchain image!";
+            return false;
+        }
+
+        XrSwapchainImageWaitInfo wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+        wait_info.timeout = 1000;
+        result = xrWaitSwapchainImage(swapchains[i], &wait_info);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "failed to wait for swapchain image!";
+            return false;
+        }
+
+        uint32_t depth_acquired_index = UINT32_MAX;
+        if (depth_supported) {
+            XrSwapchainImageAcquireInfo depth_acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+            result = xrAcquireSwapchainImage(depth_swapchains[i], &depth_acquire_info,
+                &depth_acquired_index);
+            if (!XR_SUCCEEDED(result))
+            {
+                msg = "failed to acquire swapchain image!";
+                return false;
+            }
+            XrSwapchainImageWaitInfo depth_wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+            depth_wait_info.timeout = 1000;
+            result = xrWaitSwapchainImage(depth_swapchains[i], &depth_wait_info);
+            if (!XR_SUCCEEDED(result))
+            {
+                msg = "failed to wait for swapchain image!";
+                return false;
+            }
+        }
+    }
+
+
+    return true;
+#endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+    return false;
+}
+
+
+bool OpenXRInstance::EndUpdate() {
+#if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+
+    for (uint32_t i = 0; i < view_count; i++) {
+
+        XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+        auto result = xrReleaseSwapchainImage(swapchains[i], &release_info);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "failed to release swapchain image!";
+            return false;
+        }
+
+        if (depth_supported) {
+            XrSwapchainImageReleaseInfo depth_release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+            result = xrReleaseSwapchainImage(depth_swapchains[i], &depth_release_info);
+            if (!XR_SUCCEEDED(result))
+            {
+                msg = "failed to release swapchain image!";
+                return false;
+            }
+        }
+    }
+
+    XrCompositionLayerProjection projection_layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+    projection_layer.layerFlags = 0;
+    projection_layer.space = play_space;
+    projection_layer.viewCount = view_count;
+    projection_layer.views = projection_views;
+
+    int submitted_layer_count = 1;
+    const XrCompositionLayerBaseHeader* submitted_layers[1] = {
+        (const XrCompositionLayerBaseHeader* const)&projection_layer };
+
+    if ((view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
+        submitted_layer_count = 0;
+    }
+
+    if (!frame_state.shouldRender) {
+        submitted_layer_count = 0;
+    }
+
+    XrFrameEndInfo frameEndInfo = { XR_TYPE_FRAME_END_INFO };
+    frameEndInfo.displayTime = frame_state.predictedDisplayTime;
+    frameEndInfo.layerCount = submitted_layer_count;
+    frameEndInfo.layers = submitted_layers;
+    frameEndInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+
+    auto result = xrEndFrame(session, &frameEndInfo);
+    if (!XR_SUCCEEDED(result))
+    {
+        msg = "failed to end frame!";
+        return false;
+    }
+    return true;
+#endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+    return false;
+}
+
 
 
 
@@ -343,13 +565,6 @@ bool OpenXRInstance::Init() {
         msg += " Failed to enumerate extension properties";
         return false;
     }
-
-
-    bool depth_supported = false;
-
-    bool dx11_supported = false;
-    bool dx12_supported = false;
-    bool vulkan_supported = false;
 
     for (uint32_t i = 0; i < ext_count; i++) {
 #ifdef XR_USE_GRAPHICS_API_D3D11
@@ -564,6 +779,365 @@ bool OpenXRInstance::Init() {
         msg += " Failed to create session!";
         return false;
     }
+
+
+    identity_pose = {};
+    identity_pose.orientation.x = 0;
+    identity_pose.orientation.y = 0;
+    identity_pose.orientation.z = 0;
+    identity_pose.orientation.w = 1.0;
+    identity_pose.position.x = 0;
+    identity_pose.position.y = 0;
+    identity_pose.position.z = 0;
+    XrReferenceSpaceCreateInfo play_space_create_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+    play_space_create_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    play_space_create_info.poseInReferenceSpace = identity_pose;
+    result = xrCreateReferenceSpace(session, &play_space_create_info, &play_space);
+    if (!XR_SUCCEEDED(result)) {
+        UpdateResultMSG(result);
+        msg += " Failed to create play space!";
+        return false;
+    }
+
+
+    // --- Create Swapchains
+    uint32_t swapchain_format_count;
+    result = xrEnumerateSwapchainFormats(session, 0, &swapchain_format_count, NULL);
+    if (!XR_SUCCEEDED(result)) {
+        UpdateResultMSG(result);
+        msg += " Failed to get number of supported swapchain formats";
+        return false;
+    }
+
+    int64_t* swapchain_formats = (int64_t*)malloc(sizeof(int64_t) * swapchain_format_count);;
+    result = xrEnumerateSwapchainFormats(session, swapchain_format_count, &swapchain_format_count,
+        swapchain_formats);
+    if (!XR_SUCCEEDED(result)) {
+        UpdateResultMSG(result);
+        msg += " Failed to enumerate swapchain formats";
+        return false;
+    }
+    int64_t color_format = -1;
+    int64_t depth_format = -1;
+
+    switch (renderer)
+    {
+    case RendererType::DirectX11:
+#ifdef XR_USE_GRAPHICS_API_D3D11
+        color_format = Get_Swapchain_Format(instance, session, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, true);
+        depth_format = Get_Swapchain_Format(instance, session, DXGI_FORMAT_R32_FLOAT, false);
+        if (depth_format < 0) {
+            depth_supported = false;
+        }
+#endif
+        break;
+    case RendererType::DirectX12:
+#ifdef XR_USE_GRAPHICS_API_D3D12
+        color_format = Get_Swapchain_Format(instance, session, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, true);
+        depth_format = Get_Swapchain_Format(instance, session, DXGI_FORMAT_R32_FLOAT, false);
+        if (depth_format < 0) {
+            depth_supported = false;
+        }
+#endif
+        break;
+    case RendererType::Vulkan:
+#ifdef XR_USE_GRAPHICS_API_VULKAN
+        color_format = Get_Swapchain_Format(instance, session, VK_FORMAT_R8_SRGB, true);
+        depth_format = Get_Swapchain_Format(instance, session, VK_FORMAT_R32_SFLOAT, false);
+        if (depth_format < 0) {
+            depth_supported = false;
+        }
+#endif
+        break;
+    default:
+        msg = "Failed to get swapchain formats but it should not be here";
+        return false;
+        break;
+    }
+
+
+
+    swapchains = (XrSwapchain*)malloc(sizeof(XrSwapchain) * view_count);
+    swapchain_lengths = (uint32_t*)malloc(sizeof(uint32_t) * view_count);
+    switch (renderer)
+    {
+    case RendererType::DirectX11:
+#ifdef XR_USE_GRAPHICS_API_D3D11
+        images_dx11 = (XrSwapchainImageD3D11KHR**)malloc(sizeof(XrSwapchainImageD3D11KHR*) * view_count);
+#endif
+        break;
+    case RendererType::DirectX12:
+#ifdef XR_USE_GRAPHICS_API_D3D12
+        images_dx12 = (XrSwapchainImageD3D12KHR**)malloc(sizeof(XrSwapchainImageD3D12KHR*) * view_count);
+#endif
+        break;
+    case RendererType::Vulkan:
+#ifdef XR_USE_GRAPHICS_API_VULKAN
+        images_vk = (XrSwapchainImageVulkanKHR**)malloc(sizeof(XrSwapchainImageVulkanKHR*) * view_count);
+#endif
+        break;
+    default:
+        break;
+    }
+
+
+    for (size_t i = 0; i < view_count; i++)
+    {
+        XrSwapchainCreateInfo swapchain_create_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+        swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchain_create_info.createFlags = 0;
+        swapchain_create_info.format = color_format;
+        swapchain_create_info.sampleCount = viewconfig_views[i].recommendedSwapchainSampleCount;
+        swapchain_create_info.width = viewconfig_views[i].recommendedImageRectWidth;
+        swapchain_create_info.height = viewconfig_views[i].recommendedImageRectHeight;
+        swapchain_create_info.faceCount = 1;
+        swapchain_create_info.arraySize = 1;
+        swapchain_create_info.mipCount = 1;
+
+        result = xrCreateSwapchain(session, &swapchain_create_info, &swapchains[i]);
+        if (!XR_SUCCEEDED(result)) {
+            UpdateResultMSG(result);
+            msg += " Failed to create swapchain";
+            return false;
+        }
+        result = xrEnumerateSwapchainImages(swapchains[i], 0, &swapchain_lengths[i], NULL);
+        if (!XR_SUCCEEDED(result)) {
+            UpdateResultMSG(result);
+            msg += " Failed to enumerate swapchains";
+            return false;
+        }
+        switch (renderer)
+        {
+        case RendererType::DirectX11:
+#ifdef XR_USE_GRAPHICS_API_D3D11
+            images_dx11[i] = (XrSwapchainImageD3D11KHR*)malloc(sizeof(XrSwapchainImageD3D11KHR) * swapchain_lengths[i]);
+            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+                images_dx11[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
+                images_dx11[i][j].next = NULL;
+            }
+
+
+            result =
+                xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
+                    (XrSwapchainImageBaseHeader*)images_dx11[i]);
+            if (!XR_SUCCEEDED(result)) {
+                UpdateResultMSG(result);
+                msg += " Failed to enumerate swapchain images";
+                return false;
+            }
+#endif
+            break;
+        case RendererType::DirectX12:
+#ifdef XR_USE_GRAPHICS_API_D3D12
+            images_dx12[i] = (XrSwapchainImageD3D12KHR*)malloc(sizeof(XrSwapchainImageD3D12KHR) * swapchain_lengths[i]);
+            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+                images_dx12[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR;
+                images_dx12[i][j].next = NULL;
+            }
+
+
+            result =
+                xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
+                    (XrSwapchainImageBaseHeader*)images_dx12[i]);
+            if (!XR_SUCCEEDED(result)) {
+                UpdateResultMSG(result);
+                msg += " Failed to enumerate swapchain images";
+                return false;
+            }
+#endif
+            break;
+        case RendererType::Vulkan:
+#ifdef XR_USE_GRAPHICS_API_VULKAN
+            images_vk[i] = (XrSwapchainImageVulkanKHR*)malloc(sizeof(XrSwapchainImageVulkanKHR) * swapchain_lengths[i]);
+            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+                images_vk[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
+                images_vk[i][j].next = NULL;
+            }
+
+
+            result =
+                xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
+                    (XrSwapchainImageBaseHeader*)images_vk[i]);
+            if (!XR_SUCCEEDED(result)) {
+                UpdateResultMSG(result);
+                msg += " Failed to enumerate swapchain images";
+                return false;
+            }
+#endif
+            break;
+        default:
+            break;
+        }
+    };
+
+
+    if (depth_supported) {
+
+        depth_swapchains = (XrSwapchain*)malloc(sizeof(XrSwapchain) * view_count);
+        depth_swapchain_lengths = (uint32_t*)malloc(sizeof(uint32_t) * view_count);
+        switch (renderer)
+        {
+        case RendererType::DirectX11:
+#ifdef XR_USE_GRAPHICS_API_D3D11
+            depth_images_dx11 = (XrSwapchainImageD3D11KHR**)malloc(sizeof(XrSwapchainImageD3D11KHR*) * view_count);
+#endif
+            break;
+        case RendererType::DirectX12:
+#ifdef XR_USE_GRAPHICS_API_D3D12
+            depth_images_dx12 = (XrSwapchainImageD3D12KHR**)malloc(sizeof(XrSwapchainImageD3D12KHR*) * view_count);
+#endif
+            break;
+        case RendererType::Vulkan:
+#ifdef XR_USE_GRAPHICS_API_VULKAN
+            depth_images_vk = (XrSwapchainImageVulkanKHR**)malloc(sizeof(XrSwapchainImageVulkanKHR*) * view_count);
+#endif
+            break;
+        default:
+            break;
+        }
+
+
+        for (size_t i = 0; i < view_count; i++)
+        {
+            XrSwapchainCreateInfo swapchain_create_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+            swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+            swapchain_create_info.createFlags = 0;
+            swapchain_create_info.format = depth_format;
+            swapchain_create_info.sampleCount = viewconfig_views[i].recommendedSwapchainSampleCount;
+            swapchain_create_info.width = viewconfig_views[i].recommendedImageRectWidth;
+            swapchain_create_info.height = viewconfig_views[i].recommendedImageRectHeight;
+            swapchain_create_info.faceCount = 1;
+            swapchain_create_info.arraySize = 1;
+            swapchain_create_info.mipCount = 1;
+
+            result = xrCreateSwapchain(session, &swapchain_create_info, &depth_swapchains[i]);
+            if (!XR_SUCCEEDED(result)) {
+                UpdateResultMSG(result);
+                msg += " Failed to create swapchain";
+                return false;
+            }
+            result = xrEnumerateSwapchainImages(depth_swapchains[i], 0, &depth_swapchain_lengths[i], NULL);
+            if (!XR_SUCCEEDED(result)) {
+                UpdateResultMSG(result);
+                msg += " Failed to enumerate swapchains";
+                return false;
+            }
+            switch (renderer)
+            {
+            case RendererType::DirectX11:
+#ifdef XR_USE_GRAPHICS_API_D3D11
+                depth_images_dx11[i] = (XrSwapchainImageD3D11KHR*)malloc(sizeof(XrSwapchainImageD3D11KHR) * depth_swapchain_lengths[i]);
+                for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+                    depth_images_dx11[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
+                    depth_images_dx11[i][j].next = NULL;
+                }
+
+
+                result =
+                    xrEnumerateSwapchainImages(depth_swapchains[i], depth_swapchain_lengths[i], &depth_swapchain_lengths[i],
+                        (XrSwapchainImageBaseHeader*)depth_images_dx11[i]);
+                if (!XR_SUCCEEDED(result)) {
+                    UpdateResultMSG(result);
+                    msg += " Failed to enumerate swapchain images";
+                    return false;
+                }
+#endif
+                break;
+            case RendererType::DirectX12:
+#ifdef XR_USE_GRAPHICS_API_D3D12
+                depth_images_dx12[i] = (XrSwapchainImageD3D12KHR*)malloc(sizeof(XrSwapchainImageD3D12KHR) * depth_swapchain_lengths[i]);
+                for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+                    depth_images_dx12[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR;
+                    depth_images_dx12[i][j].next = NULL;
+                }
+
+
+                result =
+                    xrEnumerateSwapchainImages(depth_swapchains[i], depth_swapchain_lengths[i], &depth_swapchain_lengths[i],
+                        (XrSwapchainImageBaseHeader*)depth_images_dx12[i]);
+                if (!XR_SUCCEEDED(result)) {
+                    UpdateResultMSG(result);
+                    msg += " Failed to enumerate swapchain images";
+                    return false;
+                }
+#endif
+                break;
+            case RendererType::Vulkan:
+#ifdef XR_USE_GRAPHICS_API_VULKAN
+                depth_images_vk[i] = (XrSwapchainImageVulkanKHR*)malloc(sizeof(XrSwapchainImageVulkanKHR) * depth_swapchain_lengths[i]);
+                for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+                    depth_images_vk[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
+                    depth_images_vk[i][j].next = NULL;
+                }
+
+
+                result =
+                    xrEnumerateSwapchainImages(depth_swapchains[i], depth_swapchain_lengths[i], &depth_swapchain_lengths[i],
+                        (XrSwapchainImageBaseHeader*)depth_images_vk[i]);
+                if (!XR_SUCCEEDED(result)) {
+                    UpdateResultMSG(result);
+                    msg += " Failed to enumerate swapchain images";
+                    return false;
+                }
+#endif
+                break;
+            default:
+                break;
+            }
+        };
+
+
+        views = (XrView*)malloc(sizeof(XrView) * view_count);
+        for (uint32_t i = 0; i < view_count; i++) {
+            views[i].type = XR_TYPE_VIEW;
+            views[i].next = NULL;
+        }
+
+        projection_views = (XrCompositionLayerProjectionView*)malloc(
+            sizeof(XrCompositionLayerProjectionView) * view_count);
+        for (uint32_t i = 0; i < view_count; i++) {
+            projection_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+            projection_views[i].next = NULL;
+
+            projection_views[i].subImage.swapchain = swapchains[i];
+            projection_views[i].subImage.imageArrayIndex = 0;
+            projection_views[i].subImage.imageRect.offset.x = 0;
+            projection_views[i].subImage.imageRect.offset.y = 0;
+            projection_views[i].subImage.imageRect.extent.width =
+                viewconfig_views[i].recommendedImageRectWidth;
+            projection_views[i].subImage.imageRect.extent.height =
+                viewconfig_views[i].recommendedImageRectHeight;
+        };
+
+
+        if (depth_supported) {
+            depth_infos = (XrCompositionLayerDepthInfoKHR*)malloc(sizeof(XrCompositionLayerDepthInfoKHR) *
+                view_count);
+            for (uint32_t i = 0; i < view_count; i++) {
+                depth_infos[i].type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR;
+                depth_infos[i].next = NULL;
+                depth_infos[i].minDepth = 0.f;
+                depth_infos[i].maxDepth = 1.f;
+                depth_infos[i].nearZ = 10;
+                depth_infos[i].farZ = 40000;
+
+                depth_infos[i].subImage.swapchain = depth_swapchains[i];
+                depth_infos[i].subImage.imageArrayIndex = 0;
+                depth_infos[i].subImage.imageRect.offset.x = 0;
+                depth_infos[i].subImage.imageRect.offset.y = 0;
+                depth_infos[i].subImage.imageRect.extent.width =
+                    viewconfig_views[i].recommendedImageRectWidth;
+                depth_infos[i].subImage.imageRect.extent.height =
+                    viewconfig_views[i].recommendedImageRectHeight;
+
+                // depth is chained to projection, not submitted as separate layer
+                projection_views[i].next = &depth_infos[i];
+            };
+        }
+    }
+
+
+
 
     msg = "Started OpenXR";
     return true;

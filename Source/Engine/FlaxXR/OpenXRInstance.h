@@ -1,6 +1,9 @@
 #pragma once
 #include "Engine\Graphics\GPUDevice.h"
-
+#include "Engine\Graphics\RenderBuffers.h"
+#if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+#define FLAXXR_SUPPORTED
+#endif
 
 #if OPENXR_SUPPORT
 
@@ -73,17 +76,51 @@ public:
 	// array of view_count views, filled by the runtime with current HMD display pose
 	XrView* views = NULL;
 
+    XrPosef identity_pose = {};
+
+    XrCompositionLayerDepthInfoKHR* depth_infos;
+
 #ifdef XR_USE_GRAPHICS_API_D3D11
 	XrGraphicsBindingD3D11KHR graphics_binding_dx11;
+    XrSwapchainImageD3D11KHR** images_dx11 = NULL;
+    XrSwapchainImageD3D11KHR** depth_images_dx11 = NULL;
 #endif
 #ifdef XR_USE_GRAPHICS_API_D3D12
 	XrGraphicsBindingD3D12KHR graphics_binding_dx12;
+    XrSwapchainImageD3D12KHR** images_dx12 = NULL;
+    XrSwapchainImageD3D12KHR** depth_images_dx12 = NULL;
 #endif
 #ifdef XR_USE_GRAPHICS_API_VULKAN
 	XrGraphicsBindingVulkanKHR graphics_binding_vk;
+    XrSwapchainImageVulkanKHR** images_vk = NULL;
+    XrSwapchainImageVulkanKHR** depth_images_vk = NULL;
 #endif
 
+    XrFrameState frame_state;
+    XrViewState view_state;
+
+    XrSwapchain* swapchains = NULL;
+    uint32_t* swapchain_lengths = NULL;
+
+
+    XrSwapchain* depth_swapchains = NULL;
+    uint32_t* depth_swapchain_lengths = NULL;
+
+
+
+    int64_t Get_Swapchain_Format(XrInstance instance,
+        XrSession session,
+        int64_t preferred_format,
+        bool fallback);
+
 	void UpdateResultMSG(XrResult result);
+
+
+    bool depth_supported = false;
+
+    bool dx11_supported = false;
+    bool dx12_supported = false;
+    bool vulkan_supported = false;
 
 #endif
 public:
@@ -92,5 +129,10 @@ public:
     bool Stop();
 
 	bool Init();
+
+    bool BeginUpdate();
+
+    bool EndUpdate();
+
 };
 
