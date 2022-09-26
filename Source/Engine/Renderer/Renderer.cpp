@@ -298,10 +298,8 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     auto context = GPUDevice::Instance->GetMainContext();
     auto* graphicsSettings = GraphicsSettings::Get();
     auto& view = renderContext.View;
-    bool isXRRender = false;
     if (task->IsXRRender) {
         ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0 && FlaxXR::OpenXRRunning());
-        isXRRender = FlaxXR::GetOpenXRInstance()->BeginUpdate();
     }
     else {
         ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0);
@@ -320,7 +318,10 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     renderContext.View.Prepare(renderContext);
     if (renderContext.View.Origin != renderContext.View.PrevOrigin)
         renderContext.Task->CameraCut(); // Cut any temporal effects on rendering origin change
-
+    bool isXRRender = false;
+    if (task->IsXRRender) {
+        isXRRender = FlaxXR::GetOpenXRInstance()->BeginUpdate();
+    }
     renderContext.Buffers->Prepare();
 
     for (auto& postFx : task->CustomPostFx)

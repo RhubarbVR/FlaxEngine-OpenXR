@@ -345,6 +345,22 @@ bool OpenXRInstance::BeginUpdate() {
             return false;
             break;
         }
+        case XR_SESSION_STATE_READY: {
+            // start session only if it is not running, i.e. not when we already called xrBeginSession
+            // but the runtime did not switch to the next state yet
+            if (!session_running) {
+                XrSessionBeginInfo session_begin_info = { XR_TYPE_SESSION_BEGIN_INFO };
+                session_begin_info.primaryViewConfigurationType = view_type;
+                result = xrBeginSession(session, &session_begin_info);
+                if (!XR_SUCCEEDED(result))
+                {
+                    FlaxXR::StopOpenXR();
+                    return false;
+                }
+                session_running = true;
+            }
+            return false;
+        }
         case XR_SESSION_STATE_LOSS_PENDING:
         case XR_SESSION_STATE_EXITING:
             FlaxXR::StopOpenXR();
@@ -357,6 +373,9 @@ bool OpenXRInstance::BeginUpdate() {
         break;
     }
 
+    if (!session_running) {
+        return false;
+    }
 
     frame_state = { XR_TYPE_FRAME_STATE };
     XrFrameWaitInfo frame_wait_info = { XR_TYPE_FRAME_WAIT_INFO };
@@ -367,18 +386,18 @@ bool OpenXRInstance::BeginUpdate() {
         return false;
     }
 
-    XrViewLocateInfo view_locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
-    view_locate_info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-    view_locate_info.displayTime = frame_state.predictedDisplayTime;
-    view_locate_info.space = play_space;
+    //XrViewLocateInfo view_locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
+    //view_locate_info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    //view_locate_info.displayTime = frame_state.predictedDisplayTime;
+    //view_locate_info.space = play_space;
 
-    view_state = { XR_TYPE_VIEW_STATE };
-    result = xrLocateViews(session, &view_locate_info, &view_state, view_count, &view_count, views);
-    if (!XR_SUCCEEDED(result))
-    {
-        msg = "Could not locate views";
-        return false;
-    }
+    //view_state = { XR_TYPE_VIEW_STATE };
+    //result = xrLocateViews(session, &view_locate_info, &view_state, view_count, &view_count, views);
+    //if (!XR_SUCCEEDED(result))
+    //{
+    //    msg = "Could not locate views";
+    //    return false;
+    //}
 
 
     // --- Begin frame
@@ -842,7 +861,7 @@ bool OpenXRInstance::Init() {
         break;
     case RendererType::Vulkan:
 #ifdef XR_USE_GRAPHICS_API_VULKAN
-        color_format = Get_Swapchain_Format(instance, session, VK_FORMAT_R8_SRGB, true);
+        color_format = Get_Swapchain_Format(instance, session, VK_FORMAT_R8G8B8A8_SRGB, true);
         depth_format = Get_Swapchain_Format(instance, session, VK_FORMAT_R32_SFLOAT, false);
         if (depth_format < 0) {
             depth_supported = false;
@@ -856,7 +875,8 @@ bool OpenXRInstance::Init() {
     }
 
 
-
+    finalSwampChains = (GPUTexture***)malloc(sizeof(GPUTexture**) * view_count);
+    renderBuffers = (RenderBuffers***)malloc(sizeof(RenderBuffers**) * view_count);
     swapchains = (XrSwapchain*)malloc(sizeof(XrSwapchain) * view_count);
     swapchain_lengths = (uint32_t*)malloc(sizeof(uint32_t) * view_count);
     switch (renderer)
@@ -906,17 +926,38 @@ bool OpenXRInstance::Init() {
             msg += " Failed to enumerate swapchains";
             return false;
         }
+        renderBuffers[i] = (RenderBuffers**)malloc(sizeof(RenderBuffers*) * swapchain_lengths[i]);
+        finalSwampChains[i] = (GPUTexture**)malloc(sizeof(GPUTexture*) * swapchain_lengths[i]);
+        for (size_t j = 0; j < swapchain_lengths[i]; j++)
+        {
+            renderBuffers[i][j] = new RenderBuffers();
+            renderBuffers[i][j]->Init(swapchain_create_info.width, swapchain_create_info.height);
+            finalSwampChains[i][j] = GPUTexture::New();
+            GPUTextureDescription desc = {};
+            desc.Width = swapchain_create_info.width;
+            desc.Height = swapchain_create_info.height;
+            desc.Dimensions = TextureDimensions::Texture;
+            desc.MipLevels = swapchain_create_info.mipCount;
+            desc.ArraySize = swapchain_create_info.arraySize;
+            desc.DefaultClearColor = { 1,1,1,1 };
+            desc.Format = PixelFormat::R8G8B8A8_UNorm_sRGB;
+            desc.Depth = 1;
+            desc.MultiSampleLevel = MSAALevel::None;
+            finalSwampChains[i][j]->Init(desc);
+        }
         switch (renderer)
         {
         case RendererType::DirectX11:
 #ifdef XR_USE_GRAPHICS_API_D3D11
             images_dx11[i] = (XrSwapchainImageD3D11KHR*)malloc(sizeof(XrSwapchainImageD3D11KHR) * swapchain_lengths[i]);
-            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+            for (size_t j = 0; j < swapchain_lengths[i]; j++)
+            {
                 images_dx11[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
                 images_dx11[i][j].next = NULL;
+                auto data = finalSwampChains[i][j]->GetNativePtr();
+                auto texureTemp = (ID3D11Texture2D*)data;
+                images_dx11[i][j].texture = texureTemp;
             }
-
-
             result =
                 xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
                     (XrSwapchainImageBaseHeader*)images_dx11[i]);
@@ -930,12 +971,12 @@ bool OpenXRInstance::Init() {
         case RendererType::DirectX12:
 #ifdef XR_USE_GRAPHICS_API_D3D12
             images_dx12[i] = (XrSwapchainImageD3D12KHR*)malloc(sizeof(XrSwapchainImageD3D12KHR) * swapchain_lengths[i]);
-            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+            for (size_t j = 0; j < swapchain_lengths[i]; j++)
+            {
                 images_dx12[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR;
                 images_dx12[i][j].next = NULL;
+                images_dx12[i][j].texture = (ID3D12Resource*)finalSwampChains[i][j]->GetNativePtr();
             }
-
-
             result =
                 xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
                     (XrSwapchainImageBaseHeader*)images_dx12[i]);
@@ -949,12 +990,12 @@ bool OpenXRInstance::Init() {
         case RendererType::Vulkan:
 #ifdef XR_USE_GRAPHICS_API_VULKAN
             images_vk[i] = (XrSwapchainImageVulkanKHR*)malloc(sizeof(XrSwapchainImageVulkanKHR) * swapchain_lengths[i]);
-            for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+            for (size_t j = 0; j < swapchain_lengths[i]; j++)
+            {
                 images_vk[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
                 images_vk[i][j].next = NULL;
+                images_vk[i][j].image = *(VkImage*)finalSwampChains[i][j]->GetNativePtr();
             }
-
-
             result =
                 xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
                     (XrSwapchainImageBaseHeader*)images_vk[i]);
@@ -1030,8 +1071,8 @@ bool OpenXRInstance::Init() {
                 for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
                     depth_images_dx11[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
                     depth_images_dx11[i][j].next = NULL;
+                    depth_images_dx11[i][j].texture = (ID3D11Texture2D*)renderBuffers[i][j]->DepthBuffer->GetNativePtr();
                 }
-
 
                 result =
                     xrEnumerateSwapchainImages(depth_swapchains[i], depth_swapchain_lengths[i], &depth_swapchain_lengths[i],
@@ -1046,11 +1087,12 @@ bool OpenXRInstance::Init() {
             case RendererType::DirectX12:
 #ifdef XR_USE_GRAPHICS_API_D3D12
                 depth_images_dx12[i] = (XrSwapchainImageD3D12KHR*)malloc(sizeof(XrSwapchainImageD3D12KHR) * depth_swapchain_lengths[i]);
-                for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+                for (size_t j = 0; j < swapchain_lengths[j]; j++)
+                {
                     depth_images_dx12[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR;
                     depth_images_dx12[i][j].next = NULL;
+                    depth_images_dx12[i][j].texture = (ID3D12Resource*)renderBuffers[i][j]->DepthBuffer->GetNativePtr();
                 }
-
 
                 result =
                     xrEnumerateSwapchainImages(depth_swapchains[i], depth_swapchain_lengths[i], &depth_swapchain_lengths[i],
@@ -1065,9 +1107,11 @@ bool OpenXRInstance::Init() {
             case RendererType::Vulkan:
 #ifdef XR_USE_GRAPHICS_API_VULKAN
                 depth_images_vk[i] = (XrSwapchainImageVulkanKHR*)malloc(sizeof(XrSwapchainImageVulkanKHR) * depth_swapchain_lengths[i]);
-                for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+                for (size_t j = 0; j < swapchain_lengths[j]; j++)
+                {
                     depth_images_vk[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
                     depth_images_vk[i][j].next = NULL;
+                    depth_images_vk[i][j].image = *(VkImage*)renderBuffers[i][j]->DepthBuffer->GetNativePtr();
                 }
 
 
@@ -1167,6 +1211,7 @@ bool OpenXRInstance::Stop() {
         }
         instance = XR_NULL_HANDLE;
     }
+
 
     msg = "Stopped OpenXR";
     return true;

@@ -46,6 +46,13 @@
 class OpenXRInstance
 {
 public:
+    // each physical Display/Eye is described by a view.
+    // view_count usually depends on the form_factor / view_type.
+    // dynamically allocating all view related structs instead of assuming 2
+    // hopefully allows this app to scale easily to different view_counts.
+    uint32_t view_count = 0;
+    uint32_t* swapchain_lengths = NULL;
+    uint32_t* depth_swapchain_lengths = NULL;
 #if OPENXR_SUPPORT
 	// Changing to HANDHELD_DISPLAY or a future form factor may work, but has not been tested.
 	XrFormFactor form_factor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
@@ -63,11 +70,6 @@ public:
 	XrSystemId system_id = XR_NULL_SYSTEM_ID;
 	// the session deals with the renderloop submitting frames to the runtime
     XrSession session = XR_NULL_HANDLE;
-	// each physical Display/Eye is described by a view.
-	// view_count usually depends on the form_factor / view_type.
-	// dynamically allocating all view related structs instead of assuming 2
-	// hopefully allows this app to scale easily to different view_counts.
-	uint32_t view_count = 0;
 	// the viewconfiguration views contain information like resolution about each view
 	XrViewConfigurationView* viewconfig_views = NULL;
 
@@ -100,12 +102,9 @@ public:
     XrViewState view_state;
 
     XrSwapchain* swapchains = NULL;
-    uint32_t* swapchain_lengths = NULL;
 
 
     XrSwapchain* depth_swapchains = NULL;
-    uint32_t* depth_swapchain_lengths = NULL;
-
 
 
     int64_t Get_Swapchain_Format(XrInstance instance,
@@ -117,12 +116,15 @@ public:
 
 
     bool depth_supported = false;
-
+    bool session_running = false;
     bool dx11_supported = false;
     bool dx12_supported = false;
     bool vulkan_supported = false;
 
 #endif
+
+    RenderBuffers*** renderBuffers;
+    GPUTexture*** finalSwampChains;
 public:
 	String msg;
     
