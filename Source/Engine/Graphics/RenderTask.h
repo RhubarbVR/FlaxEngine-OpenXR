@@ -234,6 +234,11 @@ public:
     bool IsXRRender = false;
 
     /// <summary>
+    /// True to render Main View even with Stereo
+    /// </summary>
+    bool ForceRenderMainView = false;
+
+    /// <summary>
     /// True if the task is used for custom scene rendering and default scene drawing into output should be skipped. Enable it if you use Render event and draw scene manually.
     /// </summary>
     API_FIELD() bool IsCustomRendering = false;

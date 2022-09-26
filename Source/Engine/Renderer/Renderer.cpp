@@ -318,11 +318,27 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     renderContext.View.Prepare(renderContext);
     if (renderContext.View.Origin != renderContext.View.PrevOrigin)
         renderContext.Task->CameraCut(); // Cut any temporal effects on rendering origin change
+
     bool isXRRender = false;
     if (task->IsXRRender) {
         isXRRender = FlaxXR::GetOpenXRInstance()->BeginUpdate();
     }
-    renderContext.Buffers->Prepare();
+    if (isXRRender) {
+        if(task->ForceRenderMainView)
+            renderContext.Buffers->Prepare();
+        for (size_t i = 0; i < FlaxXR::GetOpenXRInstance()->view_count; i++)
+        {
+            for (size_t j = 0; j < FlaxXR::GetOpenXRInstance()->swapchain_lengths[i]; j++)
+            {
+                FlaxXR::GetOpenXRInstance()->renderBuffers[i][j]->Prepare();
+            }
+        }
+    }
+    else {
+        renderContext.Buffers->Prepare();
+    }
+    //Todo: Finish xr rendering
+
 
     for (auto& postFx : task->CustomPostFx)
     {
@@ -342,6 +358,7 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     renderContext.List->SortDrawCalls(renderContext, true, DrawCallsListType::Forward);
     renderContext.List->SortDrawCalls(renderContext, false, DrawCallsListType::Distortion);
 
+    
     // Get the light accumulation buffer
     auto outputFormat = renderContext.Buffers->GetOutputFormat();
     auto tempDesc = GPUTextureDescription::New2D(renderContext.Buffers->GetWidth(), renderContext.Buffers->GetHeight(), outputFormat);

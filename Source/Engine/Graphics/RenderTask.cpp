@@ -406,9 +406,11 @@ void SceneRenderTask::OnBegin(GPUContext* context)
 void SceneRenderTask::OnRender(GPUContext* context)
 {
     if (Camera != nullptr) {
+        ForceRenderMainView = Camera->GetRenderMainView();
         IsXRRender = Camera->GetUseXRRendering() && FlaxXR::OpenXRRunning();
     }
     else {
+        ForceRenderMainView = true;
         IsXRRender = false;
     }
 

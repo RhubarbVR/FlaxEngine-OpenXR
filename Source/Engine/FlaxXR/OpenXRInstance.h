@@ -46,6 +46,13 @@
 class OpenXRInstance
 {
 public:
+    bool depth_supported = false;
+    bool session_running = false;
+    bool dx11_supported = false;
+    bool dx12_supported = false;
+    bool vulkan_supported = false;
+    RenderBuffers*** renderBuffers = nullptr;
+    GPUTexture*** finalSwampChains = nullptr;
     // each physical Display/Eye is described by a view.
     // view_count usually depends on the form_factor / view_type.
     // dynamically allocating all view related structs instead of assuming 2
@@ -113,18 +120,7 @@ public:
         bool fallback);
 
 	void UpdateResultMSG(XrResult result);
-
-
-    bool depth_supported = false;
-    bool session_running = false;
-    bool dx11_supported = false;
-    bool dx12_supported = false;
-    bool vulkan_supported = false;
-
 #endif
-
-    RenderBuffers*** renderBuffers;
-    GPUTexture*** finalSwampChains;
 public:
 	String msg;
     
