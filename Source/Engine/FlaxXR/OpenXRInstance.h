@@ -53,6 +53,8 @@ public:
     bool vulkan_supported = false;
     RenderBuffers*** renderBuffers = nullptr;
     GPUTexture*** finalSwampChains = nullptr;
+    SceneRenderTask*** renderTasks = nullptr;
+
     // each physical Display/Eye is described by a view.
     // view_count usually depends on the form_factor / view_type.
     // dynamically allocating all view related structs instead of assuming 2

@@ -298,12 +298,8 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     auto context = GPUDevice::Instance->GetMainContext();
     auto* graphicsSettings = GraphicsSettings::Get();
     auto& view = renderContext.View;
-    if (task->IsXRRender) {
-        ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0 && FlaxXR::OpenXRRunning());
-    }
-    else {
-        ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0);
-    }
+    ASSERT(renderContext.Buffers && renderContext.Buffers->GetWidth() > 0);
+
 
 
     // Perform postFx volumes blending and query before rendering
@@ -319,25 +315,7 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
     if (renderContext.View.Origin != renderContext.View.PrevOrigin)
         renderContext.Task->CameraCut(); // Cut any temporal effects on rendering origin change
 
-    bool isXRRender = false;
-    if (task->IsXRRender) {
-        isXRRender = FlaxXR::GetOpenXRInstance()->BeginUpdate();
-    }
-    if (isXRRender) {
-        if(task->ForceRenderMainView)
-            renderContext.Buffers->Prepare();
-        for (size_t i = 0; i < FlaxXR::GetOpenXRInstance()->view_count; i++)
-        {
-            for (size_t j = 0; j < FlaxXR::GetOpenXRInstance()->swapchain_lengths[i]; j++)
-            {
-                FlaxXR::GetOpenXRInstance()->renderBuffers[i][j]->Prepare();
-            }
-        }
-    }
-    else {
-        renderContext.Buffers->Prepare();
-    }
-    //Todo: Finish xr rendering
+    renderContext.Buffers->Prepare();
 
 
     for (auto& postFx : task->CustomPostFx)
@@ -594,11 +572,6 @@ void RenderInner(SceneRenderTask* task, RenderContext& renderContext)
         else
         {
             MultiScaler::Instance()->Upscale(context, task->GetOutputViewport(), frameBuffer, task->GetOutputView());
-        }
-    }
-    if (isXRRender) {
-        if (!FlaxXR::GetOpenXRInstance()->EndUpdate()) {
-            FlaxXR::StopOpenXR();
         }
     }
 }

@@ -228,15 +228,6 @@ public:
     /// </summary>
     bool IsCameraCut = true;
 
-    /// <summary>
-    /// True if the current frame is StereoRender
-    /// </summary>
-    bool IsXRRender = false;
-
-    /// <summary>
-    /// True to render Main View even with Stereo
-    /// </summary>
-    bool ForceRenderMainView = false;
 
     /// <summary>
     /// True if the task is used for custom scene rendering and default scene drawing into output should be skipped. Enable it if you use Render event and draw scene manually.

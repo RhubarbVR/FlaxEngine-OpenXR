@@ -5,6 +5,8 @@
 #include "Engine\Engine\Engine.h"
 #include "Engine\Core\Log.h"
 #include "FlaxXR.h"
+#include "Engine\Graphics\RenderTask.h"
+#include "Engine\Profiler\Profiler.h"
 
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
 void OpenXRInstance::UpdateResultMSG(XrResult result) {
@@ -328,132 +330,156 @@ int64_t OpenXRInstance::Get_Swapchain_Format(XrInstance instance,
 
 bool OpenXRInstance::BeginUpdate() {
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
-    XrEventDataBuffer runtime_event = { XR_TYPE_EVENT_DATA_BUFFER };
-    auto result = xrPollEvent(instance, &runtime_event);
-    if (!XR_SUCCEEDED(result))
+    PROFILE_GPU_CPU("OpenXR Instance Begin Update");
     {
-        msg = "PollEvent was not successful";
-        return false;
-    }
+        PROFILE_GPU_CPU("Poll Events");
+        XrEventDataBuffer runtime_event = { XR_TYPE_EVENT_DATA_BUFFER };
+        auto result = xrPollEvent(instance, &runtime_event);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "PollEvent was not successful";
+            return false;
+        }
 
-    switch (runtime_event.type) {
-    case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
-        XrEventDataSessionStateChanged* event = (XrEventDataSessionStateChanged*)&runtime_event;
-        switch (event->state) {
-        case XR_SESSION_STATE_STOPPING: {
-            FlaxXR::StopOpenXR();
-            return false;
-            break;
-        }
-        case XR_SESSION_STATE_READY: {
-            // start session only if it is not running, i.e. not when we already called xrBeginSession
-            // but the runtime did not switch to the next state yet
-            if (!session_running) {
-                XrSessionBeginInfo session_begin_info = { XR_TYPE_SESSION_BEGIN_INFO };
-                session_begin_info.primaryViewConfigurationType = view_type;
-                result = xrBeginSession(session, &session_begin_info);
-                if (!XR_SUCCEEDED(result))
-                {
-                    FlaxXR::StopOpenXR();
-                    return false;
-                }
-                session_running = true;
+        switch (runtime_event.type) {
+        case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
+            XrEventDataSessionStateChanged* event = (XrEventDataSessionStateChanged*)&runtime_event;
+            switch (event->state) {
+            case XR_SESSION_STATE_MAX_ENUM: // must be a bug
+            case XR_SESSION_STATE_IDLE:
+            case XR_SESSION_STATE_UNKNOWN: {
+                return false;
+                break;
             }
-            return false;
-        }
-        case XR_SESSION_STATE_LOSS_PENDING:
-        case XR_SESSION_STATE_EXITING:
-            FlaxXR::StopOpenXR();
-            return false;
+            case XR_SESSION_STATE_FOCUSED:
+            case XR_SESSION_STATE_SYNCHRONIZED:
+            case XR_SESSION_STATE_VISIBLE: {
+                break;
+            }
+            case XR_SESSION_STATE_STOPPING: {
+                FlaxXR::StopOpenXR();
+                return false;
+                break;
+            }
+            case XR_SESSION_STATE_READY: {
+                // start session only if it is not running, i.e. not when we already called xrBeginSession
+                // but the runtime did not switch to the next state yet
+                if (!session_running) {
+                    XrSessionBeginInfo session_begin_info = { XR_TYPE_SESSION_BEGIN_INFO };
+                    session_begin_info.primaryViewConfigurationType = view_type;
+                    result = xrBeginSession(session, &session_begin_info);
+                    if (!XR_SUCCEEDED(result))
+                    {
+                        FlaxXR::StopOpenXR();
+                        return false;
+                    }
+                    session_running = true;
+                }
+                return false;
+            }
+            case XR_SESSION_STATE_LOSS_PENDING:
+            case XR_SESSION_STATE_EXITING:
+                FlaxXR::StopOpenXR();
+                return false;
+                break;
+            }
             break;
         }
-        break;
-    }
-    default:
-        break;
+        default:
+            break;
+        }
     }
 
     if (!session_running) {
         return false;
     }
-
-    frame_state = { XR_TYPE_FRAME_STATE };
-    XrFrameWaitInfo frame_wait_info = { XR_TYPE_FRAME_WAIT_INFO };
-    result = xrWaitFrame(session, &frame_wait_info, &frame_state);
-    if (!XR_SUCCEEDED(result))
     {
-        msg = "xrWaitFrame() was not successful";
-        return false;
-    }
-
-    //XrViewLocateInfo view_locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
-    //view_locate_info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-    //view_locate_info.displayTime = frame_state.predictedDisplayTime;
-    //view_locate_info.space = play_space;
-
-    //view_state = { XR_TYPE_VIEW_STATE };
-    //result = xrLocateViews(session, &view_locate_info, &view_state, view_count, &view_count, views);
-    //if (!XR_SUCCEEDED(result))
-    //{
-    //    msg = "Could not locate views";
-    //    return false;
-    //}
-
-
-    // --- Begin frame
-    XrFrameBeginInfo frame_begin_info = { XR_TYPE_FRAME_BEGIN_INFO };
-    result = xrBeginFrame(session, &frame_begin_info);
-    if (!XR_SUCCEEDED(result))
-    {
-        msg = "failed to begin frame!";
-        return false;
-    }
-    for (uint32_t i = 0; i < view_count; i++) {
-
-        if (!frame_state.shouldRender) {
-            continue;
-        }
-
-        XrSwapchainImageAcquireInfo acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-
-        uint32_t acquired_index;
-        result = xrAcquireSwapchainImage(swapchains[i], &acquire_info, &acquired_index);
+        PROFILE_GPU_CPU("xr Wait Frame");
+        frame_state = { XR_TYPE_FRAME_STATE };
+        XrFrameWaitInfo frame_wait_info = { XR_TYPE_FRAME_WAIT_INFO };
+        auto result = xrWaitFrame(session, &frame_wait_info, &frame_state);
         if (!XR_SUCCEEDED(result))
         {
-            msg = "failed to acquire swapchain image!";
+            msg = "xrWaitFrame() was not successful";
             return false;
-        }
-
-        XrSwapchainImageWaitInfo wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
-        wait_info.timeout = 1000;
-        result = xrWaitSwapchainImage(swapchains[i], &wait_info);
-        if (!XR_SUCCEEDED(result))
-        {
-            msg = "failed to wait for swapchain image!";
-            return false;
-        }
-
-        uint32_t depth_acquired_index = UINT32_MAX;
-        if (depth_supported) {
-            XrSwapchainImageAcquireInfo depth_acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-            result = xrAcquireSwapchainImage(depth_swapchains[i], &depth_acquire_info,
-                &depth_acquired_index);
-            if (!XR_SUCCEEDED(result))
-            {
-                msg = "failed to acquire swapchain image!";
-                return false;
-            }
-            XrSwapchainImageWaitInfo depth_wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
-            depth_wait_info.timeout = 1000;
-            result = xrWaitSwapchainImage(depth_swapchains[i], &depth_wait_info);
-            if (!XR_SUCCEEDED(result))
-            {
-                msg = "failed to wait for swapchain image!";
-                return false;
-            }
         }
     }
+    {
+        PROFILE_GPU_CPU("XR Begin frame");
 
+        // --- Begin frame
+        XrFrameBeginInfo frame_begin_info = { XR_TYPE_FRAME_BEGIN_INFO };
+        auto result = xrBeginFrame(session, &frame_begin_info);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "failed to begin frame!";
+            return false;
+        }
+        {
+            PROFILE_GPU_CPU("Acquire swapchain images");
+            for (uint32_t i = 0; i < view_count; i++) {
+
+                if (!frame_state.shouldRender) {
+                    continue;
+                }
+
+                XrSwapchainImageAcquireInfo acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+
+                uint32_t acquired_index;
+                result = xrAcquireSwapchainImage(swapchains[i], &acquire_info, &acquired_index);
+                if (!XR_SUCCEEDED(result))
+                {
+                    msg = "failed to acquire swapchain image!";
+                    return false;
+                }
+
+                XrSwapchainImageWaitInfo wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+                wait_info.timeout = 1000;
+                result = xrWaitSwapchainImage(swapchains[i], &wait_info);
+                if (!XR_SUCCEEDED(result))
+                {
+                    msg = "failed to wait for swapchain image!";
+                    return false;
+                }
+
+                uint32_t depth_acquired_index = UINT32_MAX;
+                if (depth_supported) {
+                    XrSwapchainImageAcquireInfo depth_acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+                    result = xrAcquireSwapchainImage(depth_swapchains[i], &depth_acquire_info,
+                        &depth_acquired_index);
+                    if (!XR_SUCCEEDED(result))
+                    {
+                        msg = "failed to acquire swapchain image!";
+                        return false;
+                    }
+                    XrSwapchainImageWaitInfo depth_wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+                    depth_wait_info.timeout = 1000;
+                    result = xrWaitSwapchainImage(depth_swapchains[i], &depth_wait_info);
+                    if (!XR_SUCCEEDED(result))
+                    {
+                        msg = "failed to wait for swapchain image!";
+                        return false;
+                    }
+                }
+            }
+        }
+
+        //{
+        //    PROFILE_GPU_CPU("XR Locate View frame");
+        //    XrViewLocateInfo view_locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
+        //    view_locate_info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+        //    view_locate_info.displayTime = frame_state.predictedDisplayTime;
+        //    view_locate_info.space = play_space;
+
+        //    view_state = { XR_TYPE_VIEW_STATE };
+        //    auto result = xrLocateViews(session, &view_locate_info, &view_state, view_count, &view_count, views);
+        //    if (!XR_SUCCEEDED(result))
+        //    {
+        //        msg = "Could not locate views";
+        //        return false;
+        //    }
+        //}
+    }
 
     return true;
 #endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
@@ -463,57 +489,62 @@ bool OpenXRInstance::BeginUpdate() {
 
 bool OpenXRInstance::EndUpdate() {
 #if ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
+    PROFILE_GPU_CPU("OpenXR Instance End Update");
+    {
+        PROFILE_GPU_CPU("Release Swapchain");
+        for (uint32_t i = 0; i < view_count; i++) {
 
-    for (uint32_t i = 0; i < view_count; i++) {
-
-        XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-        auto result = xrReleaseSwapchainImage(swapchains[i], &release_info);
-        if (!XR_SUCCEEDED(result))
-        {
-            msg = "failed to release swapchain image!";
-            return false;
-        }
-
-        if (depth_supported) {
-            XrSwapchainImageReleaseInfo depth_release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-            result = xrReleaseSwapchainImage(depth_swapchains[i], &depth_release_info);
+            XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+            auto result = xrReleaseSwapchainImage(swapchains[i], &release_info);
             if (!XR_SUCCEEDED(result))
             {
                 msg = "failed to release swapchain image!";
                 return false;
             }
+
+            if (depth_supported) {
+                XrSwapchainImageReleaseInfo depth_release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+                result = xrReleaseSwapchainImage(depth_swapchains[i], &depth_release_info);
+                if (!XR_SUCCEEDED(result))
+                {
+                    msg = "failed to release swapchain image!";
+                    return false;
+                }
+            }
         }
     }
-
-    XrCompositionLayerProjection projection_layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
-    projection_layer.layerFlags = 0;
-    projection_layer.space = play_space;
-    projection_layer.viewCount = view_count;
-    projection_layer.views = projection_views;
-
-    int submitted_layer_count = 1;
-    const XrCompositionLayerBaseHeader* submitted_layers[1] = {
-        (const XrCompositionLayerBaseHeader* const)&projection_layer };
-
-    if ((view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
-        submitted_layer_count = 0;
-    }
-
-    if (!frame_state.shouldRender) {
-        submitted_layer_count = 0;
-    }
-
-    XrFrameEndInfo frameEndInfo = { XR_TYPE_FRAME_END_INFO };
-    frameEndInfo.displayTime = frame_state.predictedDisplayTime;
-    frameEndInfo.layerCount = submitted_layer_count;
-    frameEndInfo.layers = submitted_layers;
-    frameEndInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-
-    auto result = xrEndFrame(session, &frameEndInfo);
-    if (!XR_SUCCEEDED(result))
     {
-        msg = "failed to end frame!";
-        return false;
+        PROFILE_GPU_CPU("End Frame");
+        XrCompositionLayerProjection projection_layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+        projection_layer.layerFlags = 0;
+        projection_layer.space = play_space;
+        projection_layer.viewCount = view_count;
+        projection_layer.views = projection_views;
+
+        int submitted_layer_count = 1;
+        const XrCompositionLayerBaseHeader* submitted_layers[1] = {
+            (const XrCompositionLayerBaseHeader* const)&projection_layer };
+
+        if ((view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
+            submitted_layer_count = 0;
+        }
+
+        if (!frame_state.shouldRender) {
+            submitted_layer_count = 0;
+        }
+
+        XrFrameEndInfo frameEndInfo = { XR_TYPE_FRAME_END_INFO };
+        frameEndInfo.displayTime = frame_state.predictedDisplayTime;
+        frameEndInfo.layerCount = submitted_layer_count;
+        frameEndInfo.layers = submitted_layers;
+        frameEndInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+        
+        auto result = xrEndFrame(session, &frameEndInfo);
+        if (!XR_SUCCEEDED(result))
+        {
+            msg = "failed to end frame!";
+            return false;
+        }
     }
     return true;
 #endif // ((GRAPHICS_API_VULKAN | GRAPHICS_API_DIRECTX12 | GRAPHICS_API_DIRECTX11) & OPENXR_SUPPORT)
@@ -554,6 +585,7 @@ bool OpenXRInstance::Init() {
 #endif
     };
     msg = "Starting OpenXR";
+
 
 
 
@@ -809,7 +841,7 @@ bool OpenXRInstance::Init() {
     identity_pose.position.y = 0;
     identity_pose.position.z = 0;
     XrReferenceSpaceCreateInfo play_space_create_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
-    play_space_create_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    play_space_create_info.referenceSpaceType = play_space_type;
     play_space_create_info.poseInReferenceSpace = identity_pose;
     result = xrCreateReferenceSpace(session, &play_space_create_info, &play_space);
     if (!XR_SUCCEEDED(result)) {
@@ -877,6 +909,7 @@ bool OpenXRInstance::Init() {
 
     finalSwampChains = (GPUTexture***)malloc(sizeof(GPUTexture**) * view_count);
     renderBuffers = (RenderBuffers***)malloc(sizeof(RenderBuffers**) * view_count);
+    renderTasks = (SceneRenderTask***)malloc(sizeof(SceneRenderTask**) * view_count);
     swapchains = (XrSwapchain*)malloc(sizeof(XrSwapchain) * view_count);
     swapchain_lengths = (uint32_t*)malloc(sizeof(uint32_t) * view_count);
     switch (renderer)
@@ -928,10 +961,11 @@ bool OpenXRInstance::Init() {
         }
         renderBuffers[i] = (RenderBuffers**)malloc(sizeof(RenderBuffers*) * swapchain_lengths[i]);
         finalSwampChains[i] = (GPUTexture**)malloc(sizeof(GPUTexture*) * swapchain_lengths[i]);
+        renderTasks[i] = (SceneRenderTask**)malloc(sizeof(SceneRenderTask*) * swapchain_lengths[i]);
         for (size_t j = 0; j < swapchain_lengths[i]; j++)
         {
-            renderBuffers[i][j] = new RenderBuffers();
-            renderBuffers[i][j]->Init(swapchain_create_info.width, swapchain_create_info.height);
+            renderTasks[i][j] = new SceneRenderTask();
+            renderTasks[i][j]->Resize(swapchain_create_info.width, swapchain_create_info.height);
             finalSwampChains[i][j] = GPUTexture::New();
             GPUTextureDescription desc = {};
             desc.Width = swapchain_create_info.width;
@@ -939,11 +973,16 @@ bool OpenXRInstance::Init() {
             desc.Dimensions = TextureDimensions::Texture;
             desc.MipLevels = swapchain_create_info.mipCount;
             desc.ArraySize = swapchain_create_info.arraySize;
-            desc.DefaultClearColor = { 1,1,1,1 };
+            desc.DefaultClearColor = Color(1, 1, 1);
             desc.Format = PixelFormat::R8G8B8A8_UNorm_sRGB;
             desc.Depth = 1;
             desc.MultiSampleLevel = MSAALevel::None;
             finalSwampChains[i][j]->Init(desc);
+            renderTasks[i][j]->Output = finalSwampChains[i][j];
+            renderTasks[i][j]->Order = -100;
+            renderTasks[i][j]->View.Flags = ViewFlags::DefaultGame;
+            renderTasks[i][j]->Enabled = true;
+            renderBuffers[i][j] = renderTasks[i][j]->Buffers;
         }
         switch (renderer)
         {
@@ -954,9 +993,7 @@ bool OpenXRInstance::Init() {
             {
                 images_dx11[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR;
                 images_dx11[i][j].next = NULL;
-                auto data = finalSwampChains[i][j]->GetNativePtr();
-                auto texureTemp = (ID3D11Texture2D*)data;
-                images_dx11[i][j].texture = texureTemp;
+                images_dx11[i][j].texture = (ID3D11Texture2D*)finalSwampChains[i][j]->GetNativePtr();;
             }
             result =
                 xrEnumerateSwapchainImages(swapchains[i], swapchain_lengths[i], &swapchain_lengths[i],
@@ -1129,57 +1166,55 @@ bool OpenXRInstance::Init() {
                 break;
             }
         };
-
-
-        views = (XrView*)malloc(sizeof(XrView) * view_count);
-        for (uint32_t i = 0; i < view_count; i++) {
-            views[i].type = XR_TYPE_VIEW;
-            views[i].next = NULL;
-        }
-
-        projection_views = (XrCompositionLayerProjectionView*)malloc(
-            sizeof(XrCompositionLayerProjectionView) * view_count);
-        for (uint32_t i = 0; i < view_count; i++) {
-            projection_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
-            projection_views[i].next = NULL;
-
-            projection_views[i].subImage.swapchain = swapchains[i];
-            projection_views[i].subImage.imageArrayIndex = 0;
-            projection_views[i].subImage.imageRect.offset.x = 0;
-            projection_views[i].subImage.imageRect.offset.y = 0;
-            projection_views[i].subImage.imageRect.extent.width =
-                viewconfig_views[i].recommendedImageRectWidth;
-            projection_views[i].subImage.imageRect.extent.height =
-                viewconfig_views[i].recommendedImageRectHeight;
-        };
-
-
-        if (depth_supported) {
-            depth_infos = (XrCompositionLayerDepthInfoKHR*)malloc(sizeof(XrCompositionLayerDepthInfoKHR) *
-                view_count);
-            for (uint32_t i = 0; i < view_count; i++) {
-                depth_infos[i].type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR;
-                depth_infos[i].next = NULL;
-                depth_infos[i].minDepth = 0.f;
-                depth_infos[i].maxDepth = 1.f;
-                depth_infos[i].nearZ = 10;
-                depth_infos[i].farZ = 40000;
-
-                depth_infos[i].subImage.swapchain = depth_swapchains[i];
-                depth_infos[i].subImage.imageArrayIndex = 0;
-                depth_infos[i].subImage.imageRect.offset.x = 0;
-                depth_infos[i].subImage.imageRect.offset.y = 0;
-                depth_infos[i].subImage.imageRect.extent.width =
-                    viewconfig_views[i].recommendedImageRectWidth;
-                depth_infos[i].subImage.imageRect.extent.height =
-                    viewconfig_views[i].recommendedImageRectHeight;
-
-                // depth is chained to projection, not submitted as separate layer
-                projection_views[i].next = &depth_infos[i];
-            };
-        }
     }
 
+    views = (XrView*)malloc(sizeof(XrView) * view_count);
+    for (uint32_t i = 0; i < view_count; i++) {
+        views[i].type = XR_TYPE_VIEW;
+        views[i].next = NULL;
+    }
+
+    projection_views = (XrCompositionLayerProjectionView*)malloc(
+        sizeof(XrCompositionLayerProjectionView) * view_count);
+    for (uint32_t i = 0; i < view_count; i++) {
+        projection_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+        projection_views[i].next = NULL;
+
+        projection_views[i].subImage.swapchain = swapchains[i];
+        projection_views[i].subImage.imageArrayIndex = 0;
+        projection_views[i].subImage.imageRect.offset.x = 0;
+        projection_views[i].subImage.imageRect.offset.y = 0;
+        projection_views[i].subImage.imageRect.extent.width =
+            viewconfig_views[i].recommendedImageRectWidth;
+        projection_views[i].subImage.imageRect.extent.height =
+            viewconfig_views[i].recommendedImageRectHeight;
+    };
+
+
+    if (depth_supported) {
+        depth_infos = (XrCompositionLayerDepthInfoKHR*)malloc(sizeof(XrCompositionLayerDepthInfoKHR) *
+            view_count);
+        for (uint32_t i = 0; i < view_count; i++) {
+            depth_infos[i].type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR;
+            depth_infos[i].next = NULL;
+            depth_infos[i].minDepth = 0.f;
+            depth_infos[i].maxDepth = 1.f;
+            depth_infos[i].nearZ = 10;
+            depth_infos[i].farZ = 40000;
+
+            depth_infos[i].subImage.swapchain = depth_swapchains[i];
+            depth_infos[i].subImage.imageArrayIndex = 0;
+            depth_infos[i].subImage.imageRect.offset.x = 0;
+            depth_infos[i].subImage.imageRect.offset.y = 0;
+            depth_infos[i].subImage.imageRect.extent.width =
+                viewconfig_views[i].recommendedImageRectWidth;
+            depth_infos[i].subImage.imageRect.extent.height =
+                viewconfig_views[i].recommendedImageRectHeight;
+
+            // depth is chained to projection, not submitted as separate layer
+            projection_views[i].next = &depth_infos[i];
+        };
+    }
 
 
 

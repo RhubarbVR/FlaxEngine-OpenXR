@@ -1,15 +1,18 @@
 #include "FlaxXR.h"
-#include "Engine/Core/Config/GameSettings.h"
+#include "Engine\Core\Config\GameSettings.h"
 #include "FlaxEngine.Gen.h"
-#include "Engine/Engine/EngineService.h"
-#include "Engine/Graphics/RenderBuffers.h"
+#include "Engine\Engine\EngineService.h"
+#include "Engine\Graphics\RenderBuffers.h"
+#include "Engine\Level\Actors\Camera.h"
+#include "Engine\Graphics\RenderTask.h"
+#include "Engine\Profiler\Profiler.h"
 
 class FlaxXRService : public EngineService
 {
 public:
 
     FlaxXRService()
-        : EngineService(TEXT("FlaxXR"), 50)
+        : EngineService(TEXT("FlaxXR"), -60)
     {
     }
 
@@ -35,15 +38,49 @@ bool FlaxXRService::Init() {
     else
     {
         LOG(Info, "OpenXR not Supported on this platform");
-        //NotifyStateChange(false);
+        FlaxXR::RunningStateChange(false);
     }
     return false;
 }
 
+bool renderedThisFrame = false;
+
 void FlaxXRService::Update() {
-
+    PROFILE_GPU_CPU("FlaxXR");
+    if (renderedThisFrame) {
+        PROFILE_GPU_CPU("FlaxXR End Frame");
+        if (FlaxXR::OpenXRRunning()) {
+            FlaxXR::GetOpenXRInstance()->EndUpdate();
+        }
+    }
+    renderedThisFrame = false;
+    if (FlaxXR::OpenXRRunning()) {
+        renderedThisFrame = FlaxXR::GetOpenXRInstance()->BeginUpdate();
+    }
+    auto mainCam = Camera::GetMainCamera();
+    if (mainCam != nullptr) {
+        PROFILE_GPU_CPU("FlaxXR Start Frame");
+        if (!mainCam->GetUseXRRendering()) {
+            mainCam = nullptr;
+        }
+        if (FlaxXR::OpenXRRunning()) {
+            for (size_t i = 0; i < FlaxXR::GetOpenXRInstance()->view_count; i++)
+            {
+                for (size_t j = 0; j < FlaxXR::GetOpenXRInstance()->swapchain_lengths[i]; j++)
+                {
+                    auto renderTask = FlaxXR::GetOpenXRInstance()->renderTasks[i][j];
+                    renderTask->Enabled = renderedThisFrame && (mainCam != nullptr);
+                    if (renderTask->Enabled) {
+                        renderTask->ActorsSource = MainRenderTask::Instance->ActorsSource;
+                        renderTask->CustomActors = MainRenderTask::Instance->CustomActors;
+                        renderTask->CustomPostFx = MainRenderTask::Instance->CustomPostFx;
+                        renderTask->View = MainRenderTask::Instance->View;
+                    }
+                }
+            }
+        }
+    }
 }
-
 void FlaxXRService::Dispose() {
 
 }
@@ -83,16 +120,16 @@ bool FlaxXR::StartOpenXR() {
             msg = mainOpenXRInstance->msg;
             mainOpenXRInstance->Stop();
             mainOpenXRInstance = nullptr;
-    }
+        }
         RunningStateChange(result);
         return result;
-}
+        }
     msg = TEXT("OpenXR already loaded");
     return false;
 #else // OPENXR_SUPPORT
     return false;
 #endif // OPENXR_SUPPORT
-}
+    }
 Delegate<bool> FlaxXR::RunningStateChange;
 
 bool FlaxXR::StopOpenXR() {
@@ -105,7 +142,7 @@ bool FlaxXR::StopOpenXR() {
         mainOpenXRInstance = nullptr;
         RunningStateChange(false);
         return result;
-}
+    }
     msg = TEXT("OpenXR already not running");
     return false;
 #else // OPENXR_SUPPORT
